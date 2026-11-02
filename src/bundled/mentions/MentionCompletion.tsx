@@ -12,7 +12,7 @@ import { useMentionChoices } from "./use-mention-choices";
 import type { ComposerCompletionProps } from "../../features/conversation/contracts";
 import type { ComposerSession } from "../../features/messages/composer-session";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
-import { outsideMentionDetail } from "./mention-candidates";
+import { managedByDetail, outsideMentionDetail } from "./mention-candidates";
 import { matchesMentionQuery, pendingMentionQuery } from "./mention-query";
 import { continuedMention, matchingMentions } from "./mention-ranking";
 import { resolveSpaceMention } from "./resolve-space-mention";
@@ -154,43 +154,53 @@ export function MentionCompletion({
         if (withdraw) withdraw();
       };
     }
-    // Each shown row asks both; one pass each instead of one scan per row.
+    // Each shown row asks; one pass instead of one scan per row.
     const memberKeys = new Set(members);
-    const agentKeys = new Set(
-      model.candidates.flatMap((c) => (c.agent ? [c.recipient.pubkey] : [])),
-    );
     const available = [
-      ...matching.map(({ recipient, label, elsewhere, disabled }) => ({
-        disabled,
-        canSelect: (key: string) =>
-          (key !== " " || !teams.blocksSpace) &&
-          model.canSelect(recipient.pubkey, key === " "),
-        id: recipient.pubkey,
-        label,
-        detail:
-          disabled ??
-          (memberKeys.has(recipient.pubkey)
-            ? recipient.pubkey
-            : inviteAgents
-              ? `${parentAdmission ? "Adds to channel" : "Adds to chat"} · ${recipient.pubkey}`
-              : outsideMentionDetail(channel, elsewhere)),
-        preview: (
-          <Avatar
-            alt=""
-            fallback={label}
-            src={avatarMedia(
-              profiles.get(recipient.pubkey)?.picture ??
-                model.directory.people.find(
-                  (person) => person.pubkey === recipient.pubkey,
-                )?.picture,
-              session.media,
-            )}
-            size="default"
-            shape={agentKeys.has(recipient.pubkey) ? "squircle" : "circle"}
-          />
-        ),
-        edit: { mention: recipient },
-      })),
+      ...matching.map(
+        ({ recipient, label, elsewhere, disabled, agent, owner }) => {
+          const detail =
+            [
+              managedByDetail(owner, profiles),
+              disabled ??
+                (memberKeys.has(recipient.pubkey)
+                  ? undefined
+                  : inviteAgents
+                    ? parentAdmission
+                      ? "Adds to channel"
+                      : "Adds to chat"
+                    : outsideMentionDetail(channel, elsewhere)),
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined;
+          return {
+            disabled,
+            canSelect: (key: string) =>
+              (key !== " " || !teams.blocksSpace) &&
+              model.canSelect(recipient.pubkey, key === " "),
+            id: recipient.pubkey,
+            label,
+            agent,
+            ...(detail ? { detail } : {}),
+            preview: (
+              <Avatar
+                alt=""
+                fallback={label}
+                src={avatarMedia(
+                  profiles.get(recipient.pubkey)?.picture ??
+                    model.directory.people.find(
+                      (person) => person.pubkey === recipient.pubkey,
+                    )?.picture,
+                  session.media,
+                )}
+                size="default"
+                shape={agent ? "squircle" : "circle"}
+              />
+            ),
+            edit: { mention: recipient },
+          };
+        },
+      ),
       ...matchingTeams.map((team) => ({
         id: team.id,
         label: team.name,
@@ -294,15 +304,9 @@ export function MentionCompletion({
                         }
                       : model.directory.loading
                         ? { status: "Searching community…" }
-                        : model.directory.more ||
-                            model.truncated ||
-                            matching.length + matchingTeams.length > 50
-                          ? {
-                              status: "Narrow your search to see more members.",
-                            }
-                          : teams.status
-                            ? { status: teams.status }
-                            : {}),
+                        : teams.status
+                          ? { status: teams.status }
+                          : {}),
       ...((admitted && teams.canRetry) ||
       model.directory.error ||
       (admitted &&

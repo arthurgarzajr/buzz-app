@@ -3,6 +3,7 @@ import { useMentionArchives } from "../../features/messages/use-mention-archives
 import {
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -71,7 +72,12 @@ function page(session: ComposerSession, people: readonly Person[]) {
   const key = JSON.stringify(
     [...people]
       .sort((a, b) => (a.pubkey < b.pubkey ? -1 : a.pubkey > b.pubkey ? 1 : 0))
-      .map(({ pubkey, name, isAgent }) => [pubkey, name, !!isAgent]),
+      .map(({ pubkey, name, isAgent, ownerPubkey }) => [
+        pubkey,
+        name,
+        !!isAgent,
+        ownerPubkey,
+      ]),
   );
   const seen = pages.get(session) ?? new Map<string, readonly Person[]>();
   pages.set(session, seen);
@@ -133,10 +139,11 @@ export function namedCandidates(
   const facts = [
     ...outside
       .filter((person) => !known?.(person.pubkey))
-      .map(({ pubkey, name, isAgent }) => ({
+      .map(({ pubkey, name, isAgent, ownerPubkey }) => ({
         pubkey,
         name,
         ...(isAgent ? { isAgent } : {}),
+        ...(ownerPubkey ? { ownerPubkey } : {}),
       })),
     ...selected,
   ];
@@ -333,6 +340,18 @@ export function useMentionChoices(
   let rows = same ? installed.rows : undefined;
   if (!same && installed) install(undefined);
   // Only choices the query can match; ranking reads no others.
+  // Load the names behind "Managed by" for other people's agents.
+  const owners = [
+    ...new Set(candidates.flatMap((c) => (c.owner ? [c.owner] : []))),
+  ]
+    .sort()
+    .join(":");
+  useEffect(() => {
+    if (owners)
+      void session.profiles
+        .ensure(owners.split(":"), "background")
+        .catch(() => {});
+  }, [session, owners]);
   const matches = matchingMentions(candidates, query);
   const rank = (choices: readonly MentionChoice[]) =>
     rankMentions(
@@ -439,8 +458,6 @@ export function useMentionChoices(
             spaceMention(fresh, localKeys(), query, evidence) === pubkey)
         );
       },
-      truncated:
-        rankMentions(matchingMentions(candidates, query), query).length > 50,
     };
   }, [
     session,

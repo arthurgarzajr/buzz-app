@@ -104,10 +104,13 @@
 .popup[data-mention] .preview:has([data-team-avatars]) {
   width: auto;
 }
-.popup[data-mention] .label:has([data-recipient-key]) {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+/* Inside the name, so the row keeps one text baseline (as message bylines). */
+.agentMark {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-inline-start: var(--space-1);
+  vertical-align: -0.125em;
 }
 .name {
   display: block;
@@ -116,13 +119,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.popup[data-mention] [data-recipient-key] {
-  flex: 0 0 12ch;
-  overflow: hidden;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  color: var(--text-metadata);
 }
 .option[aria-disabled="true"] {
   color: var(--text-subtle);

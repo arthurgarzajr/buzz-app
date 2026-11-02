@@ -34,10 +34,22 @@ export function outsideMentionDetail(
   if (elsewhere) return `In ${elsewhere}`;
   return channel?.channelType === "dm"
     ? "Not in DM · Will not be notified"
-    : "Not in channel · Choose whether to add when you send";
+    : "Not in channel";
 }
 
-type DirectoryPerson = MentionRecipient & { isAgent?: true };
+/** "Managed by" for someone else's agent, once its owner's name is known. */
+export function managedByDetail(
+  owner: string | undefined,
+  profiles: ReadonlyMap<string, { name?: string | undefined }>,
+) {
+  const name = owner && profiles.get(owner)?.name?.trim();
+  return name ? `Managed by ${name}` : undefined;
+}
+
+type DirectoryPerson = MentionRecipient & {
+  isAgent?: true;
+  ownerPubkey?: string;
+};
 type ElsewhereAgent = Pick<Agent, "pubkey" | "name" | "relay">;
 const none: readonly never[] = [];
 // Rows change only with their sources, not with each keystroke. Snapshots are
@@ -204,9 +216,12 @@ function buildCandidates(
   // Keyed lookups keep one pass over members linear in a large channel.
   const listed = new Map<string, string>();
   const directoryAgents = new Set<string>();
+  const directoryOwners = new Map<string, string>();
   for (const person of directory) {
     if (!listed.has(person.pubkey)) listed.set(person.pubkey, person.name);
     if (person.isAgent) directoryAgents.add(person.pubkey);
+    if (person.ownerPubkey && !directoryOwners.has(person.pubkey))
+      directoryOwners.set(person.pubkey, person.ownerPubkey);
   }
   const rostered = new Map<string, string>();
   for (const person of roster ?? [])
@@ -220,33 +235,39 @@ function buildCandidates(
     ]);
     if (agent.managed) managed.add(agent.pubkey);
   }
+  // Self-declared display metadata, never authority (see profiles.ts).
+  const ownerOf = (pubkey: string) =>
+    profiles.get(pubkey)?.ownerPubkey ?? directoryOwners.get(pubkey);
   return [...choices.values()]
     .filter((p) => admits(p.pubkey))
-    .map((recipient) => ({
-      recipient,
-      member: memberKeys.has(recipient.pubkey),
-      /** The host of the owner's other community this agent is in. */
-      ...(hosts.has(recipient.pubkey)
-        ? { elsewhere: hosts.get(recipient.pubkey) }
-        : {}),
-      agent:
-        hosts.has(recipient.pubkey) ||
-        known.has(recipient.pubkey) ||
-        directoryAgents.has(recipient.pubkey),
-      owned:
-        !!session.viewer &&
-        profiles.get(recipient.pubkey)?.ownerPubkey === session.viewer,
-      managed: managed.has(recipient.pubkey),
-      aliases: [
-        ...new Set(
-          [
-            profiles.get(recipient.pubkey)?.name ||
-              listed.get(recipient.pubkey) ||
-              rostered.get(recipient.pubkey),
-            ...(agentNames.get(recipient.pubkey) ?? []),
-            hosts.has(recipient.pubkey) ? recipient.name : undefined,
-          ].filter((name): name is string => !!name),
-        ),
-      ],
-    }));
+    .map((recipient) => {
+      const owner = ownerOf(recipient.pubkey);
+      return {
+        recipient,
+        member: memberKeys.has(recipient.pubkey),
+        /** The host of the owner's other community this agent is in. */
+        ...(hosts.has(recipient.pubkey)
+          ? { elsewhere: hosts.get(recipient.pubkey) }
+          : {}),
+        agent:
+          hosts.has(recipient.pubkey) ||
+          known.has(recipient.pubkey) ||
+          directoryAgents.has(recipient.pubkey),
+        /** Who declares this agent theirs, when someone else does. */
+        ...(owner && owner !== session.viewer ? { owner } : {}),
+        owned: !!session.viewer && owner === session.viewer,
+        managed: managed.has(recipient.pubkey),
+        aliases: [
+          ...new Set(
+            [
+              profiles.get(recipient.pubkey)?.name ||
+                listed.get(recipient.pubkey) ||
+                rostered.get(recipient.pubkey),
+              ...(agentNames.get(recipient.pubkey) ?? []),
+              hosts.has(recipient.pubkey) ? recipient.name : undefined,
+            ].filter((name): name is string => !!name),
+          ),
+        ],
+      };
+    });
 }

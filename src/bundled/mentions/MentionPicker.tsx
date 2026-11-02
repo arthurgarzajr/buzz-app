@@ -15,12 +15,13 @@ import {
   AtIcon,
   CaretDownIcon,
   CheckIcon,
+  RobotIcon,
 } from "../../shared/design-system/icons/index";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTeamMentions } from "./use-team-mentions";
 import { useMentionChoices } from "./use-mention-choices";
 import type { ComposerSession } from "../../features/messages/composer-session";
-import { outsideMentionDetail } from "./mention-candidates";
+import { managedByDetail, outsideMentionDetail } from "./mention-candidates";
 import { matchPerson } from "../../features/search/person-match";
 import { MatchedLabel } from "../../features/search/MatchedLabel";
 import { useSearchHighlight } from "../../features/search/use-search-highlight";
@@ -382,7 +383,15 @@ export function MentionPicker({
               {...highlight.listProps}
             >
               {candidates.map(
-                ({ recipient, label, agent, elsewhere, disabled: reason }) => {
+                ({
+                  recipient,
+                  label,
+                  agent,
+                  owner,
+                  elsewhere,
+                  disabled: reason,
+                }) => {
+                  const managedBy = managedByDetail(owner, profiles);
                   // Each addressed agent's row shows a check; fill is only
                   // the keyboard and pointer highlight.
                   const addressed = !!audience?.recipients.some(
@@ -401,7 +410,6 @@ export function MentionPicker({
                       highlighted={audience ? focused : false}
                       aria-current={false}
                       aria-pressed={audience ? addressed : undefined}
-                      aria-label={`${label} ${recipient.pubkey}`}
                       disabled={disabled || !!reason}
                       onClick={() => chooseRecipient(recipient)}
                       label={
@@ -413,27 +421,38 @@ export function MentionPicker({
                               label={label}
                               positions={matched(label)}
                             />
+                            {agent && (
+                              <span
+                                aria-hidden="true"
+                                className={styles.agentMark}
+                              >
+                                <RobotIcon />
+                              </span>
+                            )}
+                            {agent && <span className="sr-only"> Agent</span>}
                           </span>
                           {reason && <small>{reason}</small>}
-                          {!members?.includes(recipient.pubkey) && (
+                          {(managedBy ||
+                            !members?.includes(recipient.pubkey)) && (
                             <small className="text-caption text-subtle">
-                              {inviteAgents
-                                ? parentAdmission
-                                  ? "Adds to channel when you send"
-                                  : "Adds to chat when you send"
-                                : outsideMentionDetail(channel, elsewhere)}
+                              {[
+                                managedBy,
+                                members?.includes(recipient.pubkey)
+                                  ? undefined
+                                  : inviteAgents
+                                    ? parentAdmission
+                                      ? "Adds to channel when you send"
+                                      : "Adds to chat when you send"
+                                    : outsideMentionDetail(channel, elsewhere),
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </small>
                           )}
                         </span>
                       }
-                      title={recipient.pubkey}
                       trailing={
-                        <span className="flex items-center gap-2">
-                          <code>{recipient.pubkey.slice(0, 12)}</code>
-                          {addressed && (
-                            <CheckIcon size={16} aria-hidden="true" />
-                          )}
-                        </span>
+                        addressed && <CheckIcon size={16} aria-hidden="true" />
                       }
                       icon={
                         <Avatar
@@ -489,9 +508,6 @@ export function MentionPicker({
                   onClick={() => chooseTeam(team)}
                 />
               ))}
-              {model.truncated && (
-                <p>Narrow your search to see more members.</p>
-              )}
               {members && !candidates.length && !teams.choices.length && (
                 <p>No matching channel members.</p>
               )}
